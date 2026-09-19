@@ -4,11 +4,7 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/*
- * Veridect design system — "bench instrument".
- * Dense dark technical tool: IBM Plex Sans + IBM Plex Mono, orange accent,
- * instrument greens/ambers for verdict states. All values oklch.
- */
+/* Veridect — compact two-pass verification workspace. */
 
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
@@ -29,6 +25,8 @@
   --color-accent: var(--accent);
   --color-ok: var(--ok);
   --color-warn: var(--warn);
+  --color-heading: var(--heading);
+  --color-field: var(--field);
 
   --color-background: var(--ink);
   --color-foreground: var(--fg);
@@ -55,16 +53,18 @@
 }
 
 :root {
-  --radius: 0.625rem;
-  --ink: oklch(0.163 0.024 265);
-  --panel: oklch(0.221 0.025 265);
-  --panel-2: oklch(0.267 0.026 265);
-  --line: oklch(0.372 0.026 265);
-  --fg: oklch(0.932 0.008 255);
-  --muted: oklch(0.658 0.017 258);
-  --accent: oklch(0.7 0.168 39);
-  --ok: oklch(0.769 0.147 161);
-  --warn: oklch(0.842 0.142 87);
+  --radius: 0.25rem;
+  --ink: oklch(0.205 0.018 45);
+  --panel: oklch(0.285 0.025 254);
+  --panel-2: oklch(0.335 0.027 252);
+  --field: oklch(0.225 0.022 255);
+  --line: oklch(0.43 0.029 252);
+  --fg: oklch(0.94 0.01 245);
+  --muted: oklch(0.71 0.025 247);
+  --heading: oklch(0.79 0.08 238);
+  --accent: oklch(0.82 0.165 89);
+  --ok: oklch(0.79 0.13 165);
+  --warn: oklch(0.78 0.15 69);
 }
 
 @keyframes snap {
@@ -125,5 +125,15 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
+    min-width: 320px;
+  }
+
+  button,
+  summary {
+    cursor: pointer;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--accent) 35%, transparent);
   }
 }
