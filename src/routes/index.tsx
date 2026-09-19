@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { auditInvoice } from "@/lib/audit.functions";
 import { TEST_CASES } from "@/lib/cases";
 import { money, type AuditResult, type Verdict } from "@/lib/verify";
@@ -21,6 +22,8 @@ export const Route = createFileRoute("/")({
         content:
           "An LLM drafts the extraction, a deterministic second pass recomputes it and shows the before and after.",
       },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: Index,
@@ -28,37 +31,38 @@ export const Route = createFileRoute("/")({
 
 type SuiteRow = {
   id: string;
-  label: string;
   expected: Verdict;
   actual: Verdict | "…" | "err";
   drift: number;
 };
 
 const VERDICT_TONE: Record<Verdict, string> = {
-  clean: "bg-ok/15 text-ok",
-  corrected: "bg-accent/15 text-accent",
-  flagged: "bg-warn/15 text-warn",
+  clean: "border-ok/50 bg-ok/15 text-ok",
+  corrected: "border-accent/50 bg-accent/15 text-accent",
+  flagged: "border-warn/50 bg-warn/15 text-warn",
 };
+
+const samples = [TEST_CASES[0], TEST_CASES[2], TEST_CASES[5]].filter(
+  (item): item is (typeof TEST_CASES)[number] => Boolean(item),
+);
 
 function Index() {
   const run = useServerFn(auditInvoice);
-  const [text, setText] = useState(TEST_CASES[0]!.text);
+  const firstCase = TEST_CASES[0];
+  const [text, setText] = useState(firstCase?.text ?? "");
   const [result, setResult] = useState<AuditResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suite, setSuite] = useState<SuiteRow[]>([]);
   const [suiteBusy, setSuiteBusy] = useState(false);
-  const [runNo, setRunNo] = useState(416);
 
   async function audit(source: string) {
     setBusy(true);
     setError(null);
     try {
-      const r = await run({ data: { text: source } });
-      setResult(r);
-      setRunNo((n) => n + 1);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "The audit run failed.");
+      setResult(await run({ data: { text: source } }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The audit run failed.");
     } finally {
       setBusy(false);
     }
@@ -67,358 +71,276 @@ function Index() {
   async function runSuite() {
     setSuiteBusy(true);
     setSuite(
-      TEST_CASES.map((c) => ({
-        id: c.id,
-        label: c.label,
-        expected: c.expected,
+      TEST_CASES.map((testCase) => ({
+        id: testCase.id,
+        expected: testCase.expected,
         actual: "…" as const,
         drift: 0,
       })),
     );
-    for (const c of TEST_CASES) {
+    for (const testCase of TEST_CASES) {
       try {
-        const r = await run({ data: { text: c.text } });
-        setSuite((prev) =>
-          prev.map((row) =>
-            row.id === c.id ? { ...row, actual: r.verdict, drift: r.drift } : row,
+        const testResult = await run({ data: { text: testCase.text } });
+        setSuite((current) =>
+          current.map((row) =>
+            row.id === testCase.id
+              ? { ...row, actual: testResult.verdict, drift: testResult.drift }
+              : row,
           ),
         );
       } catch {
-        setSuite((prev) =>
-          prev.map((row) => (row.id === c.id ? { ...row, actual: "err" as const } : row)),
+        setSuite((current) =>
+          current.map((row) =>
+            row.id === testCase.id ? { ...row, actual: "err" as const } : row,
+          ),
         );
       }
     }
     setSuiteBusy(false);
   }
 
-  const fixedCount = result?.findings.filter((f) => f.status !== "pass").length ?? 0;
-  const needleRest = result
-    ? `${Math.max(-40, Math.min(40, result.drift === 0 ? -34 : result.drift * -6))}deg`
-    : "-34deg";
+  const issueCount = result?.findings.filter((finding) => finding.status !== "pass").length ?? 0;
 
   return (
-    <div className="min-h-screen bg-ink font-sans text-fg antialiased">
-      <header className="sticky top-0 z-10 border-b border-line bg-ink/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1400px] items-center justify-between px-5 py-3">
-          <div className="flex items-center gap-3">
-            <div className="grid size-8 place-items-center rounded-md bg-accent font-mono text-sm font-semibold text-ink">
-              V
-            </div>
-            <div className="leading-tight">
-              <div className="text-sm font-semibold tracking-tight">Veridect</div>
-              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
-                Second-pass audit · v0.3
-              </div>
-            </div>
-          </div>
-          <div className="hidden items-center gap-6 font-mono text-[11px] text-muted sm:flex">
-            <span>invoice-audit</span>
-            <span className="flex items-center gap-1.5">
-              <span className="size-1.5 rounded-full bg-ok" />
-              engine online
-            </span>
-            <span className="text-fg">run #{String(runNo).padStart(4, "0")}</span>
-          </div>
-        </div>
-      </header>
+    <main className="min-h-screen bg-ink px-4 py-10 font-sans text-fg sm:px-8 sm:py-14">
+      <div className="mx-auto w-full max-w-[980px]">
+        <header className="mb-8 animate-rise">
+          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted">
+            Two-pass verifier
+          </p>
+          <h1 className="mt-2 text-4xl font-bold leading-none sm:text-5xl">Veridect</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-muted sm:text-base">
+            Paste an invoice. Pass 1 extracts a fast, confident answer. Pass 2 recomputes
+            every amount before you see it—then rewrites or flags anything that does not add up.
+          </p>
+        </header>
 
-      <main className="mx-auto grid max-w-[1400px] gap-4 px-5 py-5 lg:grid-cols-[380px_1fr]">
-        {/* INPUT RAIL */}
-        <section className="animate-rise space-y-4">
-          <div className="rounded-xl border border-line bg-panel p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted">
-                (a) input
-              </span>
-              <span className="font-mono text-[10px] text-muted">paste or load</span>
+        <section className="grid gap-4 lg:grid-cols-[1.12fr_0.88fr]">
+          <div className="border border-line bg-panel p-4 sm:p-5">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-heading">
+                Source invoice
+              </h2>
+              <span className="font-mono text-[10px] text-muted">paste or load a case</span>
             </div>
             <textarea
+              aria-label="Source invoice"
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(event) => setText(event.target.value)}
               spellCheck={false}
-              className="h-56 w-full resize-none rounded-lg bg-ink/60 p-3 font-mono text-[12px] leading-relaxed text-fg outline-none focus:ring-1 focus:ring-accent/40"
+              className="h-64 w-full resize-none border border-line bg-field p-3 font-mono text-xs leading-5 text-fg outline-none transition-colors focus:border-accent"
             />
             <div className="mt-3 flex flex-wrap gap-2">
-              {[TEST_CASES[0]!, TEST_CASES[2]!, TEST_CASES[5]!].map((c, i) => (
-                <button
-                  key={c.id}
-                  onClick={() => setText(c.text)}
-                  className={
-                    i === 2
-                      ? "rounded-md border border-accent/40 bg-accent/10 px-3 py-2 font-mono text-[11px] text-accent"
-                      : "rounded-md border border-line bg-panel-2 px-3 py-2 font-mono text-[11px] text-muted transition-colors hover:text-fg"
-                  }
+              {samples.map((testCase) => (
+                <Button
+                  key={testCase.id}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setText(testCase.text)}
+                  className="h-7 rounded-none border-line bg-field px-2 font-mono text-[10px] text-muted shadow-none hover:bg-panel-2 hover:text-fg"
                 >
-                  {c.label}
-                </button>
+                  {testCase.label}
+                </Button>
               ))}
             </div>
-            <button
+            <Button
+              type="button"
               onClick={() => audit(text)}
-              disabled={busy || suiteBusy}
-              className="mt-3 w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-ink transition-colors hover:bg-accent/90 disabled:opacity-50"
+              disabled={busy || suiteBusy || text.trim().length === 0}
+              className="mt-3 h-11 w-full rounded-none bg-accent font-mono text-xs font-semibold uppercase tracking-[0.12em] text-accent-foreground shadow-none hover:bg-accent/90"
             >
-              {busy ? "Auditing…" : "Run second pass"}
-            </button>
-            {error ? (
-              <p className="mt-2 font-mono text-[11px] text-warn">{error}</p>
-            ) : null}
+              {busy ? "Drafting & verifying…" : "Draft & verify"}
+            </Button>
+            {error ? <p className="mt-2 font-mono text-[11px] text-warn">{error}</p> : null}
           </div>
 
-          <div className="rounded-xl border border-line bg-panel p-4">
-            <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted">
-              (b) test suite
-            </span>
-            <div className="mt-3 space-y-1.5">
-              {TEST_CASES.map((c) => {
-                const row = suite.find((r) => r.id === c.id);
+          <div className="border border-line bg-panel p-4 sm:p-5">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-heading">
+                Test cases
+              </h2>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={runSuite}
+                disabled={busy || suiteBusy}
+                className="h-7 rounded-none px-2 font-mono text-[10px] text-muted hover:bg-panel-2 hover:text-fg"
+              >
+                {suiteBusy ? "Running…" : "Run all"}
+              </Button>
+            </div>
+            <div className="divide-y divide-line border-y border-line">
+              {TEST_CASES.map((testCase) => {
+                const row = suite.find((item) => item.id === testCase.id);
                 const actual = row?.actual;
-                const ok = actual === c.expected;
-                const tone =
-                  !actual || actual === "…"
-                    ? "text-muted"
+                const passed = actual === testCase.expected;
+                const status = !actual
+                  ? testCase.expected === "clean"
+                    ? "clean"
+                    : "trips"
+                  : actual === "…"
+                    ? "running"
                     : actual === "err"
-                      ? "text-warn"
-                      : ok
-                        ? "text-ok"
-                        : "text-warn";
+                      ? "error"
+                      : passed
+                        ? actual
+                        : "mismatch";
+                const statusTone =
+                  status === "clean"
+                    ? "border-ok/50 bg-ok/15 text-ok"
+                    : status === "running"
+                      ? "border-heading/50 bg-heading/10 text-heading"
+                      : "border-warn/50 bg-warn/15 text-warn";
                 return (
                   <button
-                    key={c.id}
-                    onClick={() => setText(c.text)}
-                    title={c.note}
-                    className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left transition-colors hover:bg-panel-2"
+                    type="button"
+                    key={testCase.id}
+                    onClick={() => setText(testCase.text)}
+                    className="group flex w-full items-start justify-between gap-4 py-3 text-left"
                   >
-                    <span className="font-mono text-[12px]">{c.label}</span>
-                    <span className={`font-mono text-[10px] ${tone}`}>
-                      exp {c.expected.toUpperCase()} · got{" "}
-                      {(actual ?? "—").toString().toUpperCase()}
-                      {row && row.drift !== 0 ? ` · Δ${row.drift.toFixed(2)}` : ""}
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-fg group-hover:text-heading">
+                        {testCase.label}
+                      </span>
+                      <span className="mt-1 block text-[11px] leading-4 text-muted">
+                        {testCase.note}
+                        {row && row.drift !== 0 ? ` Difference: ${money(row.drift)}.` : ""}
+                      </span>
+                    </span>
+                    <span
+                      className={`mt-0.5 shrink-0 border px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.1em] ${statusTone}`}
+                    >
+                      {status}
                     </span>
                   </button>
                 );
               })}
             </div>
-            <button
-              onClick={runSuite}
-              disabled={busy || suiteBusy}
-              className="mt-3 w-full rounded-lg border border-line bg-panel-2 py-2 font-mono text-[12px] text-fg transition-colors hover:bg-line/40 disabled:opacity-50"
-            >
-              {suiteBusy ? "Running…" : `Run all · ${TEST_CASES.length} cases`}
-            </button>
           </div>
         </section>
 
-        {/* RESULT COLUMN */}
-        <section className="space-y-4">
-          {result ? (
-            <>
-              <div className="animate-rise rounded-xl border border-line bg-panel p-5">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`animate-snap rounded-md px-3 py-1.5 font-mono text-[12px] font-semibold uppercase tracking-[0.14em] ${VERDICT_TONE[result.verdict]}`}
-                    >
-                      {result.verdict}
-                    </span>
-                    <span className="font-mono text-[11px] text-muted">
-                      draft → audit ·{" "}
-                      {fixedCount === 0
-                        ? "no discrepancies"
-                        : `${fixedCount} discrepanc${fixedCount === 1 ? "y" : "ies"} caught`}
+        {result ? (
+          <section className="mt-8 animate-rise" aria-live="polite">
+            <div className="mb-4 flex flex-wrap items-center gap-3 border-b border-line pb-3">
+              <h2 className="text-xl font-bold">Result</h2>
+              <span
+                className={`border px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] ${VERDICT_TONE[result.verdict]}`}
+              >
+                {result.verdict}
+              </span>
+              <span className="font-mono text-[10px] text-muted">
+                {issueCount} {issueCount === 1 ? "issue" : "issues"} found
+              </span>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <article className="p-4 sm:p-5">
+                <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
+                  Before — pass 1 draft
+                </h3>
+                <div className="mt-4 space-y-2 font-mono text-xs leading-5">
+                  {result.draft.lineItems.map((line, index) => (
+                    <div key={`${line.ref}-${index}`} className="flex justify-between gap-4">
+                      <span className="text-muted">{line.item}</span>
+                      <span>{money(line.amount)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between gap-4 border-t border-line pt-2">
+                    <span>Subtotal</span>
+                    <span>{money(result.draft.subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <span>{result.draft.taxLabel || "Tax"}</span>
+                    <span>{money(result.draft.taxAmount)}</span>
+                  </div>
+                  <div className="flex justify-between gap-4 pt-1 text-base font-semibold">
+                    <span>Grand total</span>
+                    <span className={result.drift !== 0 ? "text-warn line-through" : "text-ok"}>
+                      {money(result.draft.grandTotal)}
                     </span>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="relative h-12 w-40 overflow-hidden rounded-md border border-line bg-ink/50">
-                      <div className="absolute inset-x-0 top-1/2 h-px bg-line/60" />
-                      <div className="absolute left-1/2 top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-line" />
-                      <div
-                        key={runNo}
-                        style={{ ["--needle-rest" as string]: needleRest }}
-                        className="animate-needle absolute bottom-0 left-1/2 h-10 w-0.5 origin-bottom bg-accent"
-                      />
+                </div>
+                <p className="mt-4 font-mono text-[10px] text-muted">
+                  Model confidence: {result.draft.confidence.toFixed(2)}
+                </p>
+              </article>
+
+              <article className="border border-ok/60 bg-ok/5 p-4 sm:p-5">
+                <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-ok">
+                  After — verified answer
+                </h3>
+                <div className="mt-4 space-y-2 font-mono text-xs leading-5">
+                  {result.final.lineItems.map((line, index) => (
+                    <div key={`${line.ref}-${index}`} className="flex justify-between gap-4">
+                      <span className="text-muted">{line.item}</span>
+                      <span>{money(line.amount)}</span>
                     </div>
-                    <div className="font-mono text-[10px] leading-tight text-muted">
-                      drift
-                      <br />
-                      <span className={result.drift === 0 ? "text-ok" : "text-accent"}>
-                        {result.drift > 0 ? "+" : ""}
-                        {result.drift.toFixed(2)}
+                  ))}
+                  <div className="flex justify-between gap-4 border-t border-ok/30 pt-2">
+                    <span>Subtotal</span>
+                    <span>{money(result.final.subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <span>{result.final.taxLabel || "Tax"}</span>
+                    <span>{money(result.final.taxAmount)}</span>
+                  </div>
+                  <div className="flex justify-between gap-4 pt-1 text-base font-semibold text-ok">
+                    <span>Grand total</span>
+                    <span>{money(result.final.grandTotal)}</span>
+                  </div>
+                </div>
+                <p className="mt-4 text-xs leading-5 text-muted">
+                  Recomputed from quantities, unit prices, subtotal, and tax—not from the printed total.
+                </p>
+              </article>
+            </div>
+
+            <div className="mt-6 border border-line bg-panel p-4 sm:p-5">
+              <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-heading">
+                What the check found
+              </h3>
+              <div className="mt-3 divide-y divide-line">
+                {result.findings.map((finding) => (
+                  <div key={finding.check} className="grid gap-2 py-3 sm:grid-cols-[145px_1fr]">
+                    <div>
+                      <span
+                        className={`inline-block border px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.08em] ${
+                          finding.status === "pass"
+                            ? "border-ok/40 bg-ok/10 text-ok"
+                            : finding.status === "fixed"
+                              ? "border-warn/40 bg-warn/10 text-warn"
+                              : "border-accent/40 bg-accent/10 text-accent"
+                        }`}
+                      >
+                        {finding.status === "pass" ? "verified" : finding.status}
                       </span>
                     </div>
-                  </div>
-                </div>
-
-                <div className="mt-5 grid gap-4 md:grid-cols-[1fr_auto]">
-                  <div>
-                    <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted">
-                      line items
-                    </span>
-                    <table className="mt-2 w-full font-mono text-[12px]">
-                      <thead>
-                        <tr className="text-left text-muted">
-                          <th className="pb-1 font-medium">ref</th>
-                          <th className="pb-1 font-medium">item</th>
-                          <th className="pb-1 text-right font-medium">qty</th>
-                          <th className="pb-1 text-right font-medium">unit</th>
-                          <th className="pb-1 text-right font-medium">amount</th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-fg">
-                        {result.final.lineItems.map((li, i) => {
-                          const before = result.draft.lineItems[i]?.amount;
-                          const changed = before !== undefined && before !== li.amount;
-                          return (
-                            <tr key={`${li.ref}-${i}`} className="border-t border-line/50">
-                              <td className="py-1.5 text-muted">{li.ref}</td>
-                              <td>{li.item}</td>
-                              <td className="text-right">{li.qty}</td>
-                              <td className="text-right">{money(li.unit)}</td>
-                              <td className="text-right">
-                                {changed ? (
-                                  <>
-                                    <span className="text-muted line-through decoration-accent/70">
-                                      {money(before!)}
-                                    </span>{" "}
-                                    <span className="text-accent">{money(li.amount)}</span>
-                                  </>
-                                ) : (
-                                  money(li.amount)
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        <tr className="border-t border-line/50">
-                          <td className="py-1.5 text-muted">—</td>
-                          <td className="text-muted">Subtotal</td>
-                          <td />
-                          <td />
-                          <td className="text-right">{money(result.final.subtotal)}</td>
-                        </tr>
-                        <tr className="border-t border-line/50">
-                          <td className="py-1.5 text-muted">—</td>
-                          <td className="text-muted">
-                            {result.final.taxLabel || "Tax"}
-                          </td>
-                          <td />
-                          <td />
-                          <td className="text-right">{money(result.final.taxAmount)}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="rounded-lg border border-accent/30 bg-accent/5 p-4 md:w-56">
-                    <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
-                      grand total
-                    </span>
-                    <div className="mt-1 font-mono text-2xl font-semibold">
-                      {result.drift !== 0 ? (
-                        <>
-                          <span className="text-muted line-through decoration-accent/70">
-                            {money(result.draft.grandTotal)}
-                          </span>{" "}
-                          <span className="animate-xfade text-accent">
-                            {money(result.final.grandTotal)}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="text-ok">{money(result.final.grandTotal)}</span>
-                      )}
-                    </div>
-                    <div className="mt-1 font-mono text-[10px] text-muted">
-                      {result.drift !== 0
-                        ? "before → after"
-                        : `draft agreed · self-reported confidence ${result.draft.confidence.toFixed(2)}`}
+                    <div>
+                      <p className="text-sm font-semibold">{finding.check}</p>
+                      <p className="mt-1 font-mono text-[11px] leading-5 text-muted">{finding.detail}</p>
                     </div>
                   </div>
-                </div>
+                ))}
               </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-xl border border-line bg-panel p-5">
-                  <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted">
-                    check findings
-                  </span>
-                  <div className="mt-3 space-y-1">
-                    {result.findings.map((f, i) => (
-                      <div
-                        key={f.check}
-                        className="animate-rise rounded-md px-2 py-2"
-                        style={{ animationDelay: `${0.12 + i * 0.08}s` }}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="font-mono text-[12px]">{f.check}</span>
-                          <span
-                            className={`shrink-0 font-mono text-[10px] ${
-                              f.status === "pass"
-                                ? "text-ok"
-                                : f.status === "fixed"
-                                  ? "text-accent"
-                                  : "text-warn"
-                            }`}
-                          >
-                            {f.status === "pass"
-                              ? "PASS"
-                              : f.status === "fixed"
-                                ? "FAIL → fixed"
-                                : "FLAG"}
-                          </span>
-                        </div>
-                        <p className="mt-0.5 font-mono text-[10px] leading-relaxed text-muted">
-                          {f.detail}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="rounded-xl border border-line bg-panel p-5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted">
-                      raw output
-                    </span>
-                    <span className="rounded border border-line px-2 py-0.5 font-mono text-[10px] text-muted">
-                      JSON
-                    </span>
-                  </div>
-                  <pre className="mt-3 max-h-80 overflow-auto rounded-lg bg-ink/60 p-3 font-mono text-[11px] leading-relaxed text-fg">
-                    {JSON.stringify(
-                      {
-                        verdict: result.verdict,
-                        grandTotal: {
-                          before: result.draft.grandTotal,
-                          after: result.final.grandTotal,
-                        },
-                        drift: result.drift,
-                        draftConfidence: result.draft.confidence,
-                        findings: result.findings.map((f) => ({
-                          check: f.check,
-                          status: f.status,
-                        })),
-                      },
-                      null,
-                      2,
-                    )}
-                  </pre>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="rounded-xl border border-line bg-panel p-8">
-              <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted">
-                idle
-              </span>
-              <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
-                Paste an invoice and run the second pass. Veridect drafts the extraction
-                with an LLM, then re-derives every line, the subtotal, the tax and the
-                grand total from scratch. When the draft and the recomputation disagree,
-                you see both numbers.
-              </p>
             </div>
-          )}
-        </section>
-      </main>
-    </div>
+
+            <details className="mt-4 border border-line bg-panel">
+              <summary className="cursor-pointer px-4 py-3 font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+                Structured JSON output
+              </summary>
+              <pre className="max-h-80 overflow-auto border-t border-line bg-field p-4 font-mono text-[11px] leading-5 text-fg">
+                {JSON.stringify(result, null, 2)}
+              </pre>
+            </details>
+          </section>
+        ) : (
+          <p className="mt-8 border-t border-line pt-4 font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+            Ready for a source invoice
+          </p>
+        )}
+      </div>
+    </main>
   );
 }
