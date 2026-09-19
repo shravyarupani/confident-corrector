@@ -194,6 +194,7 @@ function Index() {
                     <span className={`font-mono text-[10px] ${tone}`}>
                       exp {c.expected.toUpperCase()} · got{" "}
                       {(actual ?? "—").toString().toUpperCase()}
+                      {row && row.drift !== 0 ? ` · Δ${row.drift.toFixed(2)}` : ""}
                     </span>
                   </button>
                 );
