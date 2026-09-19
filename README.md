@@ -21,6 +21,15 @@ follow from the lines above it.
    shown), or `flagged` (something unrepairable, e.g. a fabricated line).
 
 Tolerance is ±$0.011 so legitimate cent-rounding does not trip the check.
+## Why I built it this way
+
+I initially experimented with using an LLM for both the draft and verification passes. 
+The verifier could sometimes accept a plausible but incorrect calculation, so I changed 
+the design rather than trying to solve the problem only with a stronger prompt.
+
+The final version uses the LLM for extracting invoice structure, while ordinary 
+JavaScript code independently performs the arithmetic checks. This gives the second 
+pass an independent signal that does not depend on another model agreeing with the first one.
 
 ## Run it
 
@@ -95,13 +104,24 @@ stays a faithful reading and the audit owns all repair.
 
 **3. Asking a second LLM to check the first one is not a check.** My first instinct was a
 second model pass to "review" the draft. It agreed with plausible-looking wrong answers.
-The second pass is therefore pure deterministic arithmetic in `src/lib/verify.ts` — the
-LLM is used only for the part it is actually good at (pulling structure out of messy
-text), and every number it produces is re-derived in code.
+The second pass is therefore pure deterministic verification in `src/lib/verify.ts`. 
+The LLM is used for extracting structure from messy text, while the derived numbers 
+are independently recalculated in code.
 
 **4. Exact equality was too strict.** The first verifier flagged case 2, where $8.4575
 is legitimately printed as $8.46. A tool that flags correct invoices gets ignored, so
 comparisons use a ±$0.011 tolerance.
+### Development experiments
+
+I also tested several approaches while building the prototype:
+
+- **Gemini API:** repeated `503 UNAVAILABLE` responses made development and testing difficult.
+- **Ollama / Qwen 3B:** provided a local fallback, but inference was too slow for practical iteration.
+- **Groq:** I experimented with structured JSON output and encountered JSON/schema validation issues.
+- **Lovable AI Gateway:** I used the gateway for the final live LLM extraction pipeline so I could focus the implementation on the self-checking behaviour.
+- **Deterministic verification:** after testing the LLM-based verification approach, I moved the arithmetic checks into `src/lib/verify.ts`.
+
+These experiments changed the final architecture. The important lesson was that the part of the task that can be deterministically verified should not depend on another LLM's judgement.
 
 **Known limit:** the `no fabricated lines` check is a word-level containment test against
 the source. It catches an invented line item, but not a line that is real with an invented
